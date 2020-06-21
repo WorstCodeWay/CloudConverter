@@ -26,6 +26,6 @@ $ cmake .. & make
 # Usage
 
 ```bash
-$ ./CloudConverter input_cloud_file_name [output_cloud_file_name]
+$ ./cloud_converter input_cloud_file_name [output_cloud_file_name]
 ```
 

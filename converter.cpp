@@ -54,7 +54,7 @@ int main(int argc, char *argv[])
   if(argc < 2)
   {
     std::cout << "Usage: \n";
-    std::cout << "./cloud_converter input_cloud_file [output_cloud]\n";
+    std::cout << "./CloudConverter input_cloud_file [output_cloud]\n";
     return -1;
   }
 

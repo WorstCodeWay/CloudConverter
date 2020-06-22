@@ -2,7 +2,7 @@
 
 # CloudConverter
 
-A handy mini program for converting cloud points file.
+A handy mini program for converting point cloud file.
 
 ## What this tool can do?
 

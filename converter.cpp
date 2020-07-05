@@ -1,11 +1,17 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <iterator>
+#include <boost/algorithm/string/find.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
+
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/io/ply_io.h>
 
 using namespace std;
+using namespace boost;
 
 struct POINT_XYZ
 {
@@ -20,12 +26,19 @@ struct POINT_XYZI
   float z;
   uint32_t intensity;
 };
+enum FILE_TYPE
+{
+  FILE_TYPE_NONE = 0,
+  FILE_TYPE_TXT  = 1,
+  FILE_TYPE_PLY  = 2,
+  FILE_TYPE_PCD  = 3
+};
 enum TXT_POINT_TYPE
 {
-  NONE = 0,
-  XYZ = 1,
-  XYZI = 2,
-  XYZRGB = 3
+  TXT_POINT_TYPE_NONE   = 0,
+  TXT_POINT_TYPE_XYZ    = 1,
+  TXT_POINT_TYPE_XYZI   = 2,
+  TXT_POINT_TYPE_XYZRGB = 3
 };
 
 void string_split(const string &str, vector<string> &results, const string &delimiters = " ")
@@ -55,7 +68,7 @@ uint32_t CountColsOfTxt(const string one_line_from_txt_file)
 
 TXT_POINT_TYPE GetTxtPointType(std::ifstream &file)
 {
-  TXT_POINT_TYPE file_type = NONE;
+  TXT_POINT_TYPE file_type = TXT_POINT_TYPE_NONE;
 
   char one_line[500];
   file.getline(one_line, sizeof(one_line));
@@ -71,13 +84,13 @@ TXT_POINT_TYPE GetTxtPointType(std::ifstream &file)
     case 5:
       break;
     case 3:
-      file_type = XYZ;
+      file_type = TXT_POINT_TYPE_XYZ;
       break;
     case 4:
-      file_type = XYZI;
+      file_type = TXT_POINT_TYPE_XYZI;
       break;
     case 6:
-      file_type = XYZRGB;
+      file_type = TXT_POINT_TYPE_XYZRGB;
       break;
     default:
      break;
@@ -141,7 +154,37 @@ void TxtToPcd(std::vector<POINT_XYZI> &from, pcl::PointCloud< pcl::PointXYZI >::
     cloud->points[num].intensity = from[num].intensity;
   }
 }
+FILE_TYPE GetFileType(const std::string &file_name, std::string &name, std::string &suffix)
+{
+  FILE_TYPE type = FILE_TYPE_NONE;
+  std::vector<std::string> tokens;
+  name.assign(file_name);
 
+  boost::split(tokens, file_name, boost::is_any_of ("."), boost::token_compress_on);
+  iterator_range<std::string::const_iterator> found = boost::algorithm::find_last(file_name, "/");
+  boost::algorithm::erase_head(name, found.end()-file_name.begin());
+
+  if(tokens[tokens.size() -1 ] == "txt")
+  {
+    type = FILE_TYPE_TXT;
+    suffix.assign(".txt");
+    boost::algorithm::ierase_last(name, ".txt");
+  }
+  else if(tokens[tokens.size() -1 ] == "pcd")
+  {
+    type = FILE_TYPE_PCD;
+    suffix.assign(".pcd");
+    boost::algorithm::ierase_last(name, ".pcd");
+  }
+  else if(tokens[tokens.size() -1 ] == "ply")
+  {
+    type = FILE_TYPE_PLY;
+    suffix.assign(".ply");
+    boost::algorithm::ierase_last(name, ".ply");
+  }
+
+  return type;
+}
 int main(int argc, char *argv[])
 {
   if(argc < 2)
@@ -151,60 +194,82 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  std::string input(argv[1]);
+  std::string input(argv[1]), input_suffix, input_name;
   std::string output;
 
-  std::ifstream file(input.c_str(), std::ifstream::in);
-  if (!file.is_open())
+  FILE_TYPE input_type = GetFileType(input, input_name, input_suffix);
+  FILE_TYPE output_type = FILE_TYPE_PCD;
+
+  if(input_type == FILE_TYPE_NONE)
   {
-    std::cout << "Open point cloud file failed." << std::endl;
+    std::cout << "Invalid input file type. Must be one of .txt .ply .pcd." << std::endl;
     return -1;
   }
 
   if(argc == 3)
   {
-    std::string tmp(argv[2]);
-    output.assign(tmp);
+    std::string tmp;
+    output.assign(argv[2]);
+
+    output_type = GetFileType(output, tmp, tmp);
   }
   else if(argc == 2)
   {
-    std::string tmp(argv[1]);
-    int pos = tmp.find(".txt");
-    if(pos !=std::string::npos)
+    output.assign(input_name + ".pcd");
+    output_type = FILE_TYPE_PCD;
+  }
+
+  if(output_type == FILE_TYPE_NONE)
+  {
+    std::cout << "Invalid output file type. Must be one of .txt .ply .pcd." << std::endl;
+    return -1;
+  }
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZI>::Ptr gray_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+  pcl::PointCloud<pcl::PointXYZRGB>::Ptr color_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+  pcl::PCDWriter writer;
+
+  if(input_type == FILE_TYPE_TXT && output_type == FILE_TYPE_PCD)
+  {
+    std::vector<POINT_XYZ> txt_data_xyz;
+    std::vector<POINT_XYZI> txt_data_xyzi;
+
+    std::ifstream file(input.c_str(), std::ifstream::in);
+    if (!file.is_open())
     {
-      std::string file_name(tmp.substr(0, pos));
-      file_name = file_name + ".pcd";
-      output.assign(file_name);
+      std::cout << "Open point cloud file failed." << std::endl;
+      return -1;
+    }
+    TXT_POINT_TYPE point_type = GetTxtPointType(file);
+    
+    if(point_type == TXT_POINT_TYPE_XYZ)
+    {
+      GetData(txt_data_xyz, file);
+      TxtToPcd(txt_data_xyz, cloud);
+
+      writer.write<pcl::PointXYZ>(output.c_str(), *cloud, false);
+    }
+    else if(point_type == TXT_POINT_TYPE_XYZI)
+    {
+      GetData(txt_data_xyzi, file);
+      TxtToPcd(txt_data_xyzi, gray_cloud);
+
+      writer.write<pcl::PointXYZI>(output.c_str(), *gray_cloud, false);
     }
     else
     {
-      output.assign("default.pcd");
+      cout << "file type has not been supported right now.\n";
     }
+    file.close();
   }
-  std::vector<POINT_XYZ> txt_data_xyz;
-  std::vector<POINT_XYZI> txt_data_xyzi;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-  pcl::PointCloud<pcl::PointXYZI>::Ptr gray_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-
-  TXT_POINT_TYPE point_type = GetTxtPointType(file);
-  pcl::PCDWriter writer;
-  if(point_type == XYZ)
+  else if(input_type == FILE_TYPE_PLY && output_type == FILE_TYPE_PCD)
   {
-    GetData(txt_data_xyz, file);
-    TxtToPcd(txt_data_xyz, cloud);
+    pcl::PLYReader plyreader;
+    plyreader.read<pcl::PointXYZRGB>(input, *color_cloud);
 
-    writer.write<pcl::PointXYZ>(output.c_str(), *cloud, false);
-  }
-  else if(point_type == XYZI)
-  {
-    GetData(txt_data_xyzi, file);
-    TxtToPcd(txt_data_xyzi, gray_cloud);
-
-    writer.write<pcl::PointXYZI>(output.c_str(), *gray_cloud, false);
-  }
-  else
-  {
-    cout << "file type has not been supported right now.\n";
+    writer.write<pcl::PointXYZRGB>(output.c_str(), *color_cloud, false);
+    std::cout << "File " << output << " saved" << std::endl;
   }
 
   return 0;

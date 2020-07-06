@@ -232,6 +232,7 @@ int main(int argc, char *argv[])
 
   if(input_type == FILE_TYPE_TXT && output_type == FILE_TYPE_PCD)
   {
+
     std::vector<POINT_XYZ> txt_data_xyz;
     std::vector<POINT_XYZI> txt_data_xyzi;
 
@@ -269,6 +270,7 @@ int main(int argc, char *argv[])
     plyreader.read<pcl::PointXYZRGB>(input, *color_cloud);
 
     writer.write<pcl::PointXYZRGB>(output.c_str(), *color_cloud, false);
+
     std::cout << "File " << output << " saved" << std::endl;
   }
 
